@@ -13,6 +13,9 @@ genai_client = genai.Client(api_key="AIzaSyCXx3iofSsu8Dep8MOaERcv7KX4qYFH1u8")
 
 @app.route('/generate_image', methods=['POST'])
 def generate_image():
+    if not request.is_json:
+        return jsonify({"error": "Unsupported Media Type. Use 'Content-Type: application/json'."}), 415
+
     try:
         # Extract the prompt from the request JSON
         data = request.get_json()
@@ -32,9 +35,9 @@ def generate_image():
 
         # Process the response
         for part in response.candidates[0].content.parts:
-            if hasattr(part, 'text') and part.text is not None:
+            if getattr(part, 'text', None):
                 text_output += part.text
-            elif hasattr(part, 'inline_data') and part.inline_data is not None:
+            elif getattr(part, 'inline_data', None):
                 image_output = Image.open(BytesIO(part.inline_data.data))
 
         if image_output:
@@ -49,4 +52,6 @@ def generate_image():
 
 # Run the Flask app
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
