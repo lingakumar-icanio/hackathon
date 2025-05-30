@@ -41,6 +41,9 @@ def generate_image():
                 image_output = Image.open(BytesIO(part.inline_data.data))
 
         if image_output:
+            # ✅ Ensure static folder exists
+            os.makedirs("static", exist_ok=True)
+
             # Save image in static folder
             image_filename = "generated_image.png"
             image_path = os.path.join("static", image_filename)
@@ -52,6 +55,7 @@ def generate_image():
                 "image_url": image_url,
                 "description": text_output or "Image generated successfully"
             })
+
 
         else:
             return jsonify({"text": text_output or "No image was generated."})
