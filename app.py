@@ -9,7 +9,7 @@ import os
 app = Flask(__name__)
 
 # Gemini API key setup
-genai_client = genai.Client(api_key="YOUR_API_KEY_HERE")
+genai_client = genai.Client(api_key="AIzaSyCXx3iofSsu8Dep8MOaERcv7KX4qYFH1u8")
 
 @app.route('/generate_image', methods=['POST'])
 def generate_image():
