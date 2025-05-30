@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, url_for
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -41,9 +41,18 @@ def generate_image():
                 image_output = Image.open(BytesIO(part.inline_data.data))
 
         if image_output:
-            image_path = "generated_image.png"
+            # Save image in static folder
+            image_filename = "generated_image.png"
+            image_path = os.path.join("static", image_filename)
             image_output.save(image_path)
-            return send_file(image_path, mimetype='image/png')
+
+            # Generate full URL for the image
+            image_url = url_for('static', filename=image_filename, _external=True)
+            return jsonify({
+                "image_url": image_url,
+                "description": text_output or "Image generated successfully"
+            })
+
         else:
             return jsonify({"text": text_output or "No image was generated."})
 
@@ -52,6 +61,5 @@ def generate_image():
 
 # Run the Flask app
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
