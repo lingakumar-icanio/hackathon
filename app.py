@@ -232,10 +232,10 @@ def handle_manual_mode(data):
         
         # Process model response
         recipe_suggestions = json.loads(model.text)
-        for recipe in recipe_suggestions:
-            result = generate_text_and_image(recipe["data"])
-            if "image_url" in result:
-                recipe["image"] = result["image_url"]
+        # for recipe in recipe_suggestions:
+        #     result = generate_text_and_image(recipe["data"])
+        #     if "image_url" in result:
+        #         recipe["image"] = result["image_url"]
         # Format final response
         response = {
             "status": "success",
@@ -301,10 +301,10 @@ def handle_dish_query_mode(data):
         
         # Process model response
         recipe_data = json.loads(model.text)
-        for recipe in recipe_data:
-            result = generate_text_and_image(recipe["data"])
-            if "image_url" in result:
-                recipe["image"] = result["image_url"]
+        # for recipe in recipe_data:
+        #     result = generate_text_and_image(recipe["data"])
+        #     if "image_url" in result:
+        #         recipe["image"] = result["image_url"]
         # Format final response
         response = {
             "status": "success",
