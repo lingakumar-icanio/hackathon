@@ -20,7 +20,7 @@ from modules.dish_name_ingredients import RecipeResponse
 app = Flask(__name__)
 
 # Gemini API key setup
-API_KEY = "AIzaSyCXx3iofSsu8Dep8MOaERcv7KX4qYFH1u8"
+API_KEY = "AIzaSyBPzhu407hGqvzWFL_ZO7ASI_NZokza6YA"
 genai_client = genai.Client(api_key=API_KEY)
 
 @app.route('/generate_image', methods=['POST'])
