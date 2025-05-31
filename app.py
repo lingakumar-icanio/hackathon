@@ -8,6 +8,8 @@ import base64
 import json
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
+import time
+import random
 
 # Import modules
 from modules.image_to_ingredients import extract_ingredients_from_image
@@ -72,43 +74,6 @@ def generate_image():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-def generate_text_and_image(prompt: str):
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-preview-image-generation",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_modalities=['TEXT', 'IMAGE']
-        )
-    )
-
-    text_output = ""
-    image_output = None
-
-    # ✅ Safely parse parts
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, 'text') and part.text:
-            text_output += part.text.strip()
-        elif hasattr(part, 'inline_data') and part.inline_data:
-            image_output = Image.open(BytesIO(part.inline_data.data))
-
-    result = {}
-
-    # ✅ Save image and build URL
-    if image_output:
-        os.makedirs("static", exist_ok=True)
-        image_filename = "generated_image.png"
-        image_path = os.path.join("static", image_filename)
-        image_output.save(image_path)
-
-        image_url = url_for('static', filename=image_filename, _external=True)
-        print(f"Image saved at: {image_url}")
-        result["image_url"] = image_url
-
-    # ✅ Include text if available
-    if text_output:
-        result["text"] = text_output
-
-    return json.dumps(result, indent=2)
 
 @app.route('/api/generate-ingredients', methods=['POST'])
 def generate_ingredients():
@@ -211,10 +176,56 @@ def handle_image_mode(data):
     except Exception as e:
         return jsonify({"error": f"Image processing error: {str(e)}"}), 500
 
+def generate_recipe_image(dish_title, user_id):
+    """Generate an image for a recipe dish and return the URL path"""
+    try:
+        # Create a prompt for the image generation
+        prompt = f"Create a realistic, appetizing food photography style image of {dish_title}. Make it look delicious and professionally plated."
+        
+        # Call Gemini API
+        response = genai_client.models.generate_content(
+            model="gemini-2.0-flash-preview-image-generation",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=['TEXT', 'IMAGE']
+            )
+        )
+
+        image_output = None
+        
+        # Process the response
+        for part in response.candidates[0].content.parts:
+            if getattr(part, 'inline_data', None):
+                image_output = Image.open(BytesIO(part.inline_data.data))
+                break
+        
+        if image_output:
+            # Ensure recipe images folder exists
+            recipe_images_dir = os.path.join("static", "recipe_images")
+            os.makedirs(recipe_images_dir, exist_ok=True)
+            
+            # Create a filename based on dish title and user_id
+            safe_title = "".join(c if c.isalnum() else "_" for c in dish_title)
+            image_filename = f"{safe_title}_{user_id}_{int(time.time())}.png"
+            image_path = os.path.join(recipe_images_dir, image_filename)
+            
+            # Save the image
+            image_output.save(image_path)
+            
+            # Generate URL for the image
+            image_url = url_for('static', filename=f"recipe_images/{image_filename}", _external=True)
+            return image_url
+        
+        return None
+    
+    except Exception as e:
+        print(f"Error generating image for {dish_title}: {str(e)}")
+        return None
+
 def handle_manual_mode(data):
     """Process manual mode: generate recipes from manually entered ingredients"""
     ingredients = data.get("ingredients", [])
-    user_id = data.get("user_id")
+    user_id = data.get("user_id", "default_user")
     health_data = data.get("health_data", {})
     
     if not ingredients:
@@ -232,20 +243,45 @@ def handle_manual_mode(data):
         
         # Process model response
         recipe_suggestions = json.loads(model.text)
-        # for recipe in recipe_suggestions:
-        #     result = generate_text_and_image(recipe["data"])
-        #     if "image_url" in result:
-        #         recipe["image"] = result["image_url"]
+        recipe_list = recipe_suggestions.get("recipe_suggestions", [])
+        
+        # Generate images for each recipe with delay between requests
+        for i, recipe in enumerate(recipe_list):
+            recipe_title = recipe.get("title", "Unnamed Dish")
+            
+            # Add delay between image generations to avoid rate limiting
+            if i > 0:
+                # Random sleep between 2-4 seconds to avoid hitting rate limits
+                sleep_time = 2 + random.random() * 2
+                time.sleep(sleep_time)
+                
+            # Generate image with retry logic
+            max_retries = 2
+            retry_count = 0
+            
+            while retry_count <= max_retries:
+                try:
+                    image_url = generate_recipe_image(recipe_title, user_id)
+                    if image_url:
+                        recipe["image"] = image_url
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        # Wait longer between retries
+                        time.sleep(3 + retry_count * 2)
+                    else:
+                        print(f"Failed to generate image for {recipe_title} after {max_retries} retries")
+        
         # Format final response
         response = {
             "status": "success",
             "input_mode": "manual",
             "recognized_ingredients": ingredients,
             "filtered_ingredients": recipe_suggestions.get("filtered_ingredients", []),
-            "recipe_suggestions": recipe_suggestions.get("recipe_suggestions", []),
+            "recipe_suggestions": recipe_list,
             "feedback_prompt": "Rate these recipes to improve your experience."
         }
-
         
         return jsonify(response)
         
@@ -255,7 +291,7 @@ def handle_manual_mode(data):
 def handle_dish_query_mode(data):
     """Process dish query mode: get ingredients and recipe for a specific dish"""
     dish_query = data.get("dish_query")
-    user_id = data.get("user_id")
+    user_id = data.get("user_id", "default_user")
     
     if not dish_query:
         return jsonify({"error": "No dish query provided"}), 400
@@ -301,17 +337,43 @@ def handle_dish_query_mode(data):
         
         # Process model response
         recipe_data = json.loads(model.text)
-        # for recipe in recipe_data:
-        #     result = generate_text_and_image(recipe["data"])
-        #     if "image_url" in result:
-        #         recipe["image"] = result["image_url"]
+        recipe_list = recipe_data.get("recipe", [])
+        
+        # Generate images for each recipe with delay between requests
+        for i, recipe in enumerate(recipe_list):
+            recipe_title = recipe.get("title", "Unnamed Dish")
+            
+            # Add delay between image generations to avoid rate limiting
+            if i > 0:
+                # Random sleep between 2-4 seconds to avoid hitting rate limits
+                sleep_time = 2 + random.random() * 2
+                time.sleep(sleep_time)
+                
+            # Generate image with retry logic
+            max_retries = 2
+            retry_count = 0
+            
+            while retry_count <= max_retries:
+                try:
+                    image_url = generate_recipe_image(recipe_title, user_id)
+                    if image_url:
+                        recipe["image"] = image_url
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        # Wait longer between retries
+                        time.sleep(3 + retry_count * 2)
+                    else:
+                        print(f"Failed to generate image for {recipe_title} after {max_retries} retries")
+        
         # Format final response
         response = {
             "status": "success",
             "input_mode": "dish",
             "recognized_ingredients": recipe_data.get("recognized_ingredients", []),
             "filtered_ingredients": recipe_data.get("filtered_ingredients", []),
-            "recipe": recipe_data.get("recipe", []),
+            "recipe": recipe_list,
             "feedback_prompt": "Rate these recipes to improve your experience."
         }
         
