@@ -72,6 +72,43 @@ def generate_image():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+def generate_text_and_image(prompt: str):
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-preview-image-generation",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=['TEXT', 'IMAGE']
+        )
+    )
+
+    text_output = ""
+    image_output = None
+
+    # ✅ Safely parse parts
+    for part in response.candidates[0].content.parts:
+        if hasattr(part, 'text') and part.text:
+            text_output += part.text.strip()
+        elif hasattr(part, 'inline_data') and part.inline_data:
+            image_output = Image.open(BytesIO(part.inline_data.data))
+
+    result = {}
+
+    # ✅ Save image and build URL
+    if image_output:
+        os.makedirs("static", exist_ok=True)
+        image_filename = "generated_image.png"
+        image_path = os.path.join("static", image_filename)
+        image_output.save(image_path)
+
+        image_url = url_for('static', filename=image_filename, _external=True)
+        print(f"Image saved at: {image_url}")
+        result["image_url"] = image_url
+
+    # ✅ Include text if available
+    if text_output:
+        result["text"] = text_output
+
+    return json.dumps(result, indent=2)
 
 @app.route('/api/generate-ingredients', methods=['POST'])
 def generate_ingredients():
@@ -195,7 +232,10 @@ def handle_manual_mode(data):
         
         # Process model response
         recipe_suggestions = json.loads(model.text)
-        
+        for recipe in recipe_suggestions:
+            result = generate_text_and_image(recipe["data"])
+            if "image_url" in result:
+                recipe["image"] = result["image_url"]
         # Format final response
         response = {
             "status": "success",
@@ -205,6 +245,7 @@ def handle_manual_mode(data):
             "recipe_suggestions": recipe_suggestions.get("recipe_suggestions", []),
             "feedback_prompt": "Rate these recipes to improve your experience."
         }
+
         
         return jsonify(response)
         
@@ -260,7 +301,10 @@ def handle_dish_query_mode(data):
         
         # Process model response
         recipe_data = json.loads(model.text)
-        
+        for recipe in recipe_data:
+            result = generate_text_and_image(recipe["data"])
+            if "image_url" in result:
+                recipe["image"] = result["image_url"]
         # Format final response
         response = {
             "status": "success",
